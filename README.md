@@ -31,6 +31,6 @@ The above sequence will:
 
 Please notice that this class is not intended to completelly substitute the need of standard file definition, even though it can. So, use it with caution.
 
-WARNING: ***************************
+WARNING: 
 I DIDN'T PROGRAM THE CLASS TO REJECT DATABASE MAINTENANCE COMMANDS, LIKE CREATE TABLE, DROP TABLE, DROP DATABASE ETC. IF YOU ALLOW THE END USERS TO EMMIT WHATEVER COMMANDS THEY LIKE, YOU'RE RISKING RUINING COMPLETELLY YOUR DATABASE. IT IS UP TO YOU TO BLOCK USERS FROM INSERTING COMMANDS.
-************************************
+
