@@ -95,7 +95,7 @@ GO:Last                 EQUATE( -2 )
 
 ODBCColumnsType         QUEUE, TYPE                         ! Columns descriptions of a result set
 name                      CSTRING( 64 )
-key                       CSTRING( 64 )
+key                       CSTRING( 64 )                     ! This is UPPERed, to maximize finding probability
 type                      LONG
 size                      LONG
 decimals                  SHORT
@@ -140,8 +140,18 @@ Disconnect                PROCEDURE, LONG, PROC
 Construct                 PROCEDURE
                         END
 
+ODBCListFormat          QUEUE, TYPE                         ! Listbox columns options
+colNumber                 LONG                              ! ordinal position in the listbox
+colName                   CSTRING( 64 )                     ! map to result set column
+caption                   CSTRING( 64 )                     ! Header text of the column
+width                     LONG                              ! column width
+picture                   CSTRING( 32 )                     ! column picture
+visible                   LONG                              ! this column is to be presented in listbox?
+                        END
+
 ODBCDataSet             CLASS, TYPE, MODULE( 'odbcClass.clw' ), LINK( 'odbcClass.clw', _ABCLinkMode_ ), DLL( _ABCDllMode_ )
 Connection                &ODBCClass                        ! Reference to the ODBC Connection Class
+listColumns               &ODBCListFormat                   ! Collection of columns
 hdbc                      LONG, PRIVATE                     ! CONNECTION handle
 hstmt                     LONG, PRIVATE                     ! STATEMENT handle
 dataSetName               CSTRING( 64 ), PROTECTED          ! Humanized name
@@ -223,6 +233,7 @@ AddFilter                 PROCEDURE( STRING filter ), PRIVATE
 AddFilter                 PROCEDURE( *? var, STRING varName )
 AddVar                    PROCEDURE( *? var, STRING varName )
 AddResetControl           PROCEDURE( LONG feq )                                 ! Register control do fire a reset
+AddListColumn             PROCEDURE( STRING pColumn, STRING pCaption, STRING pPicture, LONG pWidth=0 )
 Construct                 PROCEDURE
 Destruct                  PROCEDURE
 ReadMem                   PROCEDURE( LONG pLength ), STRING

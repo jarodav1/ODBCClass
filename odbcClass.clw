@@ -294,15 +294,18 @@ szColumnName            CSTRING( 64 )
   SELF.ResultSetColCount = cols
 
 ODBCDataSet.LoadList    PROCEDURE( LONG feq )
+colCaption              CSTRING( 64 )
 colWidth                LONG                                ! Listbox column width
 strFormat               CSTRING( 4096 )
 colPicture              CSTRING( 127 )                      ! Listbox column picture token
+colToken                CSTRING( 32 )
 
   CODE
-  IF feq{ PROP:Type } <> CREATE:List THEN RETURN END
+  IF feq{ PROP:Type } <> CREATE:List THEN RETURN END        ! Avoid wasting time and jeopardizing the code if control is no a listbox
   IF NOT RECORDS( SELF.ResultSet )
     RETURN
   END
+
   IF SELF.listFormat                                        ! If there's already a format
     feq{ PROP:Format } = SELF.listFormat                    ! Apply the stored format to listbox
     RETURN                                                  ! and return
@@ -311,27 +314,57 @@ colPicture              CSTRING( 127 )                      ! Listbox column pic
   SELF.BindDefaultObject()                                  ! Make sure there's one ODBC object bound
   LOOP i# = 1 TO SELF.ResultSetColCount
     GET( SELF.ResultSetCols, i# )
-    colPicture = '@S20@'                                    ! Default picture
-    CASE SELF.ResultSetCols.type
-    OF SQL_CHAR OROF SQL_VARCHAR
-      colPicture = 'L(2)|M~' & SELF.ResultSetCols.name & '~@S' & |
-        CHOOSE( SELF.ResultSetCols.size > 200, '200', SELF.ResultSetCols.size ) & '@'
 
-    OF SQL_DECIMAL OROF SQL_NUMERIC OROF SQL_SMALLINT OROF SQL_INTEGER OROF SQL_BIGINT OROF SQL_REAL
-      colPicture = 'R(2)|M~' & SELF.ResultSetCols.name & '~@N' & SELF.ResultSetCols.size & '.'
-      IF SELF.ResultSetCols.decimals
-        colPicture = colPicture & '`' & SELF.ResultSetCols.decimals
+    colCaption = SELF.ResultSetCols.name
+    colWidth = SELF.ResultSetCols.size
+    IF colWidth > 200 THEN colWidth = 200 END
+    colToken = ''
+
+    SELF.listColumns.colName = SELF.ResultSetCols.key       ! Prepare to locate a matching column, by KEY
+    GET( SELF.listColumns, SELF.listColumns.colName )
+    IF NOT ERRORCODE()                                      ! Found an entry
+      IF NOT SELF.listColumns.visible THEN CYCLE END        ! If not visible, skipt format preparation
+      IF SELF.listColumns.width
+        colWidth = SELF.listColumns.width
       END
-      colPicture = colPicture & '@'
+      IF SELF.listColumns.caption
+        colCaption = SELF.listColumns.caption
+      END
+      IF SELF.listColumns.picture
+        colToken = SELF.listColumns.picture                 ! Sets or clears the picture token (see below)
+        IF colToken THEN colToken = colToken & '@' END
+      END
 
-    OF SQL_TYPE_DATE OROF SQL_INTERVAL_DAY
-      colPicture = 'C|M~' & SELF.ResultSetCols.name & '~@S12@'
-
-    OF SQL_TYPE_TIMESTAMP OROF SQL_TYPE_TIME
-      colPicture = 'L(2)|M~' & SELF.ResultSetCols.name & '~@S19@'
+    ELSE                                                    ! Result set column was not found
+      IF RECORDS( SELF.listColumns )                        ! But is there an override columns collections?
+        CYCLE                                               ! if so, then this read column can't go to the listbox
+      END
 
     END
-    colWidth = CHOOSE( INT( LOG10( SELF.ResultSetCols.size * 10 ) ), 30, 60, 100, 150, 200 )
+
+    CASE SELF.ResultSetCols.type
+    OF SQL_CHAR OROF SQL_VARCHAR
+      IF NOT colToken THEN colToken = '@S' & colWidth & '@' END
+      colPicture = 'L(2)|M~'
+
+    OF SQL_DECIMAL OROF SQL_NUMERIC OROF SQL_SMALLINT OROF SQL_INTEGER OROF SQL_BIGINT OROF SQL_REAL
+      IF NOT colToken THEN colToken = '@N' & colWidth & '.' END
+      IF SELF.ResultSetCols.decimals THEN colToken = colToken & '`' & SELF.ResultSetCols.decimals END
+      colToken = colToken & '@'
+      colPicture = 'R(2)|M~'
+
+    OF SQL_TYPE_DATE OROF SQL_INTERVAL_DAY
+      IF NOT colToken THEN colToken = '@S12@' END
+      colPicture = 'C|M~'
+
+    OF SQL_TYPE_TIMESTAMP OROF SQL_TYPE_TIME
+      IF NOT colToken THEN colToken = '@S19@' END
+      colPicture = 'L(2)|M~'
+
+    END
+
+    colPicture = colPicture & colCaption & '~' & colToken
+    colWidth = CHOOSE( INT( LOG10( colWidth * 10 ) ), 30, 60, 100, 150, 200 )
     strFormat = strFormat & colWidth & colPicture
   END
   Feq{ PROP:Format } = strFormat
@@ -442,6 +475,7 @@ lChanges                LONG
 ODBCDataSet.Construct     PROCEDURE
   CODE
   SELF.ResultSetCols &= NEW ODBCColumnsType
+  SELF.listColumns &= NEW ODBCListFormat
   SELF.ResultSet &= NEW ODBCRowsType
   SELF.Filters &= NEW ODBCRelatedFilters
   SELF.FilterVars &= NEW ODBCRelatedVars
@@ -454,6 +488,7 @@ ODBCDataSet.Destruct      PROCEDURE
   DISPOSE( SELF.ResultSetCols )
   DISPOSE( SELF.ResultSet )
   DISPOSE( SELF.Filters )
+  DISPOSE( SELF.listColumns )
 
   LOOP i# = 1 TO RECORDS( SELF.FilterVars )
     GET( SELF.FilterVars, i# )
@@ -616,6 +651,9 @@ registro                BSTRING
     MESSAGE( 'Nada para ser copiado', 'Copiar', ICON:Exclamation )
     RETURN
   END
+  LOOP WHILE KEYBOARD()
+    ASK
+  END
   OPEN( wProcessing )
   0{ PROP:Text } = 'Copiando para o clipboard'
   ?csvProgress{ PROP:RangeHigh } = SELF.ResultSetRowCount             ! Ajusta a largura da barra de progresso, com a quantidade de registros
@@ -631,6 +669,14 @@ registro                BSTRING
   LOOP row = 1 TO SELF.ResultSetRowCount                              ! Percorre todas as linhas
     SELF.Go( row )                                                    ! Lê a próxima linha
     IF not row % 100                                                  ! A cada 100 iterações
+      IF KEYBOARD()                                                   ! Anything in the keyboard?
+        ASK                                                           ! Read the buffer
+        IF KEYCODE() = EscKey                                         ! User wants to cancel the process
+          strClipboard = ''                                           ! Clears the buffer, signaling the cancel
+          BREAK                                                       ! Exits the loop
+        END
+      END
+      YIELD                                                           ! Allow for other processes to execute
       ?csvProgress{ PROP:Progress } = row                             ! Atualiza a barra de progresso
       DISPLAY()                                                       ! e apresenta a janela
     END
@@ -643,7 +689,9 @@ registro                BSTRING
     strClipboard = CLIP( strClipboard ) & '<13,10>'
   END
   CLOSE( wProcessing )
-  SETCLIPBOARD( strClipboard )                                        ! Transfer string to clipboard
+  IF strClipboard                                                     ! User didn't stop the process
+    SETCLIPBOARD( strClipboard )                                      ! Transfer string to clipboard
+  END
 
 ODBCDataSet.UI          PROCEDURE
 wdw_odbcUI              WINDOW('Propriedades de DataSet'),AT(,,492,207),|
@@ -846,6 +894,16 @@ ODBCDataSet.SetDebugKey PROCEDURE( LONG feq )
   0{ PROP:Alrt, 255 } = feq                                 ! Alerts for requested debug fire up key
   REGISTER( EVENT:AlertKey, ADDRESS( SELF.HandleClicks ), ADDRESS( SELF ) )
   //
+
+ODBCDataSet.AddListColumn PROCEDURE( STRING pColumn, STRING pCaption, STRING pPicture, LONG pWidth=0 )
+  CODE
+  SELF.listColumns.colNumber = RECORDS( SELF.listColumns )
+  SELF.listColumns.colName = UPPER( pColumn )
+  SELF.listColumns.caption = pCaption
+  SELF.listColumns.width = pWidth
+  SELF.listColumns.picture = pPicture
+  SELF.listColumns.visible = TRUE
+  ADD( SELF.listColumns )
 
 ODBCGetDiagnostic       PROCEDURE( ODBCClass O )
   CODE
