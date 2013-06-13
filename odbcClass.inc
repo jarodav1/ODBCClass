@@ -149,6 +149,13 @@ picture                   CSTRING( 32 )                     ! column picture
 visible                   LONG                              ! this column is to be presented in listbox?
                         END
 
+ODBCGetCellHistory      QUEUE, TYPE                         ! GetCell() method call history
+reference                 STRING( 64 )
+row                       LONG
+col                       LONG
+value                     STRING( 256 )
+                        END
+
 ODBCDataSet             CLASS, TYPE, MODULE( 'odbcClass.clw' ), LINK( 'odbcClass.clw', _ABCLinkMode_ ), DLL( _ABCDllMode_ )
 Connection                &ODBCClass                        ! Reference to the ODBC Connection Class
 listColumns               &ODBCListFormat                   ! Collection of columns
@@ -192,6 +199,7 @@ data3                       STRING( 2 )
 data4                       STRING( 8 )
                           END
 
+traceGetCell              LONG
 query                     CSTRING( 8192 )                   ! Default SQL query
 CurrentRow                LONG
 ResultSetColCount         LONG
@@ -204,6 +212,7 @@ Filters                   &ODBCRelatedFilters               ! Filter fields in p
 FilterVars                &ODBCRelatedVars                  ! Variable filters registered
 Vars                      &ODBCRelatedVars                  ! Variables to be updated
 Dependent                 &ODBCDependentType
+GetCellHistory            &ODBCGetCellHistory
 
 listBox                   LONG                              ! Listbox to show result set
 listFormat                CSTRING( 1024 )

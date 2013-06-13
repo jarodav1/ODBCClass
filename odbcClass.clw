@@ -269,10 +269,8 @@ szColumnName            CSTRING( 64 )
       retCode = SQLGetData( SELF.hstmt, i#, SELF.ResultSetCols.type, |
         SELF.ResultSetCols.targetAddr, SELF.ResultSetCols.targetSize, ADDRESS( lLength ) )
 
-      IF lLength < 0
-        lLength = SELF.ResultSetCols.targetSize
-      ELSE
-        lLength -= 1
+      IF lLength < 1                                        ! Nothing to read
+        CYCLE                                               ! don't even waste time
       END
 
       GET( SELF.ResultSet, 0 )
@@ -281,9 +279,7 @@ szColumnName            CSTRING( 64 )
       SELF.ResultSet.column = i#
       SELF.ResultSet.length = lLength
       IF INRANGE( retCode, SQL_SUCCESS, SQL_SUCCESS_WITH_INFO )
-        CLEAR( SELF.ResultSet.value )
         SELF.ResultSet.value = SELF.ReadMem( lLength )
-
         ADD( SELF.ResultSet )
       ELSE
         ODBCGetDiag( SQL_HANDLE_STMT, SELF.hstmt, SELF.Connection, 'LoadResult( ' & SELF.query & ' )' )
@@ -342,6 +338,10 @@ colToken                CSTRING( 32 )
 
     END
 
+    IF NOT colWidth                                         ! No suitable width could be determined, lets calculate it
+      colWidth = CHOOSE( INT( LOG10( colWidth * 10 ) ), 30, 60, 100, 150, 200 )
+    END
+
     CASE SELF.ResultSetCols.type
     OF SQL_CHAR OROF SQL_VARCHAR
       IF NOT colToken THEN colToken = '@S' & colWidth & '@' END
@@ -364,7 +364,6 @@ colToken                CSTRING( 32 )
     END
 
     colPicture = colPicture & colCaption & '~' & colToken
-    colWidth = CHOOSE( INT( LOG10( colWidth * 10 ) ), 30, 60, 100, 150, 200 )
     strFormat = strFormat & colWidth & colPicture
   END
   Feq{ PROP:Format } = strFormat
@@ -463,11 +462,29 @@ lChanges                LONG
     END
 
   ELSE
+    IF SELF.TraceGetCell
+      CLEAR( SELF.GetCellHistory )
+      SELF.GetCellHistory.reference = SELF.dataSetName
+      SELF.GetCellHistory.row = row
+      SELF.GetCellHistory.col = column
+    END
+
     SELF.ResultSet.row = row
     SELF.ResultSet.column = column
     GET( SELF.ResultSet, SELF.ResultSet.row, SELF.ResultSet.column )
     IF ERRORCODE()
+      IF SELF.TraceGetCell
+        SELF.GetCellHistory.value = 'NOT FOUND'
+      END
       CLEAR( SELF.ResultSet )
+    ELSE
+      IF SELF.TraceGetCell
+        SELF.GetCellHistory.value = SELF.ResultSet.value
+      END
+    END
+
+    IF SELF.TraceGetCell
+      ADD( SELF.GetCellHistory )
     END
     RETURN( CLIP( SELF.ResultSet.value ) )
   END
@@ -481,6 +498,7 @@ ODBCDataSet.Construct     PROCEDURE
   SELF.FilterVars &= NEW ODBCRelatedVars
   SELF.Vars &= NEW ODBCRelatedVars
   SELF.Dependent &= NEW ODBCDependentType
+  SELF.GetCellHistory &= NEW ODBCGetCellHistory
   SELF.dataSetName = 'Data set ' & ADDRESS( SELF )
 
 ODBCDataSet.Destruct      PROCEDURE
@@ -489,6 +507,7 @@ ODBCDataSet.Destruct      PROCEDURE
   DISPOSE( SELF.ResultSet )
   DISPOSE( SELF.Filters )
   DISPOSE( SELF.listColumns )
+  DISPOSE( SELF.GetCellHistory )
 
   LOOP i# = 1 TO RECORDS( SELF.FilterVars )
     GET( SELF.FilterVars, i# )
