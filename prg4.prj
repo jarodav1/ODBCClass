@@ -1,0 +1,10 @@
+-- Vínculo de variáveis e controles
+#noedit
+#system win32
+#model clarion lib
+#set RELEASE = on
+#pragma debug(vid=>off)
+#pragma optimize(cpu=>386)
+#compile "prg4.clw"
+#pragma link("C%V%TPS%X%%L%.LIB")
+#link "prg4.exe"
