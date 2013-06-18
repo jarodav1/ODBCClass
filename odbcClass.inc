@@ -1,3 +1,5 @@
+_USE_ASTRINGS_          EQUATE( 0 )                         ! Conservative mode: 0 - fearless mode: 1
+
   MAP
 
     MODULE( 'odbcClass.clw' )
@@ -108,8 +110,13 @@ ODBCRowsType            QUEUE, TYPE                         ! Rows that compose 
 row                       LONG
 column                    LONG
 length                    LONG                              ! Specific row, col value length
+  COMPILE( '//', _USE_ASTRINGS_ )
+value                     ASTRING
+  //
+  OMIT( '//', _USE_ASTRINGS_ )
 value                     ANY
 search                    CSTRING( 31 )                     ! First 30 bytes, to easy record fetching
+  //
                         END
 
 ODBCRelatedFilters      QUEUE, TYPE                         ! Filter fields collection

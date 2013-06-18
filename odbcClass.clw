@@ -307,7 +307,9 @@ szColumnName            CSTRING( 64 )
       SELF.ResultSet.length = lLength
       IF INRANGE( retCode, SQL_SUCCESS, SQL_SUCCESS_WITH_INFO )
         SELF.ResultSet.value = SELF.ReadMem( lLength )
+  OMIT( '//', _USE_ASTRINGS_ )
         SELF.ResultSet.search = SELF.ResultSet.value
+  //
         ADD( SELF.ResultSet )
       ELSE
         ODBCGetDiag( SQL_HANDLE_STMT, SELF.hstmt, SELF.Connection, 'LoadResult( ' & SELF.query & ' )' )
@@ -398,11 +400,13 @@ colToken                CSTRING( 32 )
 
 ODBCDataSet.Reset       PROCEDURE
   CODE
+  OMIT( '//', _USE_ASTRINGS_ )
   LOOP i# = 1 TO RECORDS( SELF.ResultSet )
     GET( SELF.ResultSet, i# )
     SELF.ResultSet.value &= NULL
     PUT( SELF.ResultSet )
   END
+  //
   FREE( SELF.ResultSet )
   SELF.ResultSetChanges = 0
   LOOP i# = 1 TO RECORDS( SELF.Dependent )
@@ -466,8 +470,14 @@ col                     LONG
   col = POINTER( SELF.ResultSetCols )                       ! Save the column number
 
   SELF.ResultSet.column = col
+  COMPILE( '//', _USE_ASTRINGS_ )
+  SELF.ResultSet.value = value
+  GET( SELF.ResultSet, SELF.ResultSet.column, SELF.ResultSet.value )
+  //
+  OMIT( '//', _USE_ASTRINGS_ )
   SELF.ResultSet.search = value
   GET( SELF.ResultSet, SELF.ResultSet.column, SELF.ResultSet.search )
+  //
   IF ERRORCODE() THEN RETURN 3 END
 
   IF SELF.listBox                                           ! Is there an associated listbox:
