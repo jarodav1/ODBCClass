@@ -109,6 +109,7 @@ row                       LONG
 column                    LONG
 length                    LONG                              ! Specific row, col value length
 value                     ANY
+search                    CSTRING( 31 )                     ! First 30 bytes, to easy record fetching
                         END
 
 ODBCRelatedFilters      QUEUE, TYPE                         ! Filter fields collection
@@ -126,18 +127,25 @@ id                        LONG                              ! Address of child d
 O                         &ODBCDataSet
                         END
 
+ODBCPreparedVars        QUEUE, TYPE                         ! Variable values to be used by .Exec
+value                     STRING( 1024 )
+                        END
+
 ODBCClass               CLASS, TYPE, MODULE( 'odbcClass.clw' ), LINK( 'odbcClass.clw', _ABCLinkMode_ ), DLL( _ABCDllMode_ )
 henv                      LONG, PRIVATE                     ! ENVIRONMENT handle
 hdbc                      LONG                              ! CONNECTION handle
 hstmt                     LONG, PRIVATE                     ! STATEMENT handle
 connRequest               CSTRING( 1024 ), PRIVATE          ! What we requested to connect
 connectionString          CSTRING( 1024 ), PRIVATE          ! Complete connection as responded by the driver
+PreparedVariables         &ODBCPreparedVars
 
 Connect                   PROCEDURE( STRING connectString ), LONG
+Prepare                   PROCEDURE( ? variable )
 Exec                      PROCEDURE( STRING sqlCommand ), LONG, PROC
 GetConnectionString       PROCEDURE, STRING
 Disconnect                PROCEDURE, LONG, PROC
 Construct                 PROCEDURE
+Destruct                  PROCEDURE
                         END
 
 ODBCListFormat          QUEUE, TYPE                         ! Listbox columns options
@@ -230,6 +238,7 @@ Reset                     PROCEDURE
 Go                        PROCEDURE( LONG direction=-1 ), LONG, PROC
 Previous                  PROCEDURE, LONG, PROC
 Next                      PROCEDURE, LONG, PROC
+Fetch                     PROCEDURE( STRING column, STRING value ), LONG, PROC
 Get                       PROCEDURE( STRING column ), STRING
 GetCurrentRow             PROCEDURE, LONG
 GetCell                   PROCEDURE( LONG row, SHORT column ), STRING

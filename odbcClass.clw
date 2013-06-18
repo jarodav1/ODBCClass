@@ -60,9 +60,17 @@ ODBCClass.GetConnectionString PROCEDURE
   CODE
   RETURN SELF.ConnectionString
 
+ODBCClass.Prepare       PROCEDURE( ? variable )
+  CODE
+  CLEAR( SELF.PreparedVariables )
+  SELF.PreparedVariables = variable
+  ADD( SELF.PreparedVariables )
+
 ODBCClass.Exec          PROCEDURE( STRING sqlCommand )
 retCode                 SHORT
+strParsed               BSTRING
 szSQL                   &CSTRING
+lToken                  LONG                                ! Current token ordinal being replaced
 
   CODE
   IF NOT SELF.hdbc THEN RETURN SQL_INVALID_HANDLE END
@@ -70,13 +78,26 @@ szSQL                   &CSTRING
   IF NOT INRANGE( retCode, SQL_SUCCESS, SQL_SUCCESS_WITH_INFO )
     RETURN retCode
   END
-  szSQL &= NEW CSTRING( LEN( CLIP( sqlCommand ) ) + 1 )
-  szSQL = sqlCommand
+  strParsed = sqlCommand
+  IF RECORDS( SELF.PreparedVariables )                      ! Are there any prepared variable to substitute query tokens?
+    LOOP i# = 1 TO RECORDS( SELF.PreparedVariables )
+      GET( SELF.PreparedVariables, i# )
+      lToken = INSTRING( '$', strParsed, 1, lToken + 1 )
+      IF NOT lToken THEN BREAK END
+      strParsed = SUB( strParsed, 1, lToken - 1 ) & CLIP( SELF.PreparedVariables.value ) & SUB( strParsed, lToken + 1, LEN( CLIP( strParsed ) ) )
+      lToken += 1
+    END
+  END
+  szSQL &= NEW CSTRING( LEN( CLIP( strParsed ) ) + 1 )      ! Must use CSTRING to cope with ODBC API prototype
+  szSQL = strParsed
   retCode = SQLExecDirect( SELF.hstmt, szSQL, SQL_NTS )
   IF NOT INRANGE( retCode, SQL_SUCCESS, SQL_SUCCESS_WITH_INFO )
     ODBCGetDiag( SQL_HANDLE_STMT, SELF.hstmt, SELF )
   END
   DISPOSE( szSQL )
+  IF RECORDS( SELF.PreparedVariables )                      ! Can't leave any prepared variables for next calls
+    FREE( SELF.PreparedVariables )
+  END
   RETURN SQL_SUCCESS
 
 ODBCClass.Disconnect    PROCEDURE
@@ -88,6 +109,12 @@ ODBCClass.Construct     PROCEDURE
   IF ODBCDefaulObject &= NULL                               ! No object instantiated so far
     ODBCDefaulObject &= SELF                                ! Makes this object the default
   END
+  SELF.PreparedVariables &= NEW ODBCPreparedVars
+
+ODBCClass.Destruct      PROCEDURE
+  CODE
+  FREE( SELF.PreparedVariables )
+  DISPOSE( SELF.PreparedVariables )
 
 ODBCDataSet.Init        PROCEDURE( ODBCClass Connection, LONG listBox=0, <STRING name> )
   CODE
@@ -280,6 +307,7 @@ szColumnName            CSTRING( 64 )
       SELF.ResultSet.length = lLength
       IF INRANGE( retCode, SQL_SUCCESS, SQL_SUCCESS_WITH_INFO )
         SELF.ResultSet.value = SELF.ReadMem( lLength )
+        SELF.ResultSet.search = SELF.ResultSet.value
         ADD( SELF.ResultSet )
       ELSE
         ODBCGetDiag( SQL_HANDLE_STMT, SELF.hstmt, SELF.Connection, 'LoadResult( ' & SELF.query & ' )' )
@@ -425,6 +453,27 @@ ODBCDataSet.Next        PROCEDURE
     RETURN GO:Last
   END
   RETURN 0
+
+ODBCDataSet.Fetch       PROCEDURE( STRING column, STRING value )
+col                     LONG
+
+  CODE
+  IF NOT SELF.ResultSetRowCount THEN RETURN 1 END           ! No rows
+
+  SELF.ResultSetCols.key = UPPER( column )
+  GET( SELF.ResultSetCols, SELF.ResultSetCols.key )
+  IF ERRORCODE() THEN RETURN 2 END                          ! Column not found
+  col = POINTER( SELF.ResultSetCols )                       ! Save the column number
+
+  SELF.ResultSet.column = col
+  SELF.ResultSet.search = value
+  GET( SELF.ResultSet, SELF.ResultSet.column, SELF.ResultSet.search )
+  IF ERRORCODE() THEN RETURN 3 END
+
+  IF SELF.listBox                                           ! Is there an associated listbox:
+    SELF.listBox{ PROP:Selected } = SELF.ResultSet.row      ! Selects listbox row
+  END
+  RETURN 0                                                  ! If reached here, record found
 
 ODBCDataSet.Get         PROCEDURE( STRING column )
   CODE
@@ -695,7 +744,6 @@ registro                BSTRING
           BREAK                                                       ! Exits the loop
         END
       END
-      YIELD                                                           ! Allow for other processes to execute
       ?csvProgress{ PROP:Progress } = row                             ! Atualiza a barra de progresso
       DISPLAY()                                                       ! e apresenta a janela
     END
