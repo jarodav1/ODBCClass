@@ -1,4 +1,4 @@
-_USE_ASTRINGS_          EQUATE( 0 )                         ! Conservative mode: 0 - fearless mode: 1
+_USE_ASTRINGS_          EQUATE( 1 )                         ! Conservative mode: 0 - fearless mode: 1
 
   MAP
 

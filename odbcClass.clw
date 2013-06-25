@@ -176,6 +176,7 @@ szSQL                   &CSTRING
   END
   szSQL &= NEW CSTRING( LEN( CLIP( sqlCommand ) ) + 1 )
   szSQL = sqlCommand
+  SELF.query = sqlCommand
   retCode = SQLExecDirect( SELF.hstmt, szSQL, SQL_NTS )
   IF NOT INRANGE( retCode, SQL_SUCCESS, SQL_SUCCESS_WITH_INFO )
     ODBCGetDiag( SQL_HANDLE_STMT, SELF.hstmt, SELF.Connection, 'Exec( ' & sqlCommand & ' )' )
@@ -209,6 +210,7 @@ targetFeq               LONG
     targetFeq = SELF.listBox
   END
   SELF.LoadList( targetFeq )
+  GET( SELF.ResultSet, 0 )
 
 ODBCDataSet.LoadResult  PROCEDURE
 retCode                 SHORT
@@ -418,10 +420,10 @@ ODBCDataSet.Go          PROCEDURE( LONG direction=-1 )
 rowTarget               LONG
 
   CODE
-  IF NOT SELF.ResultSetRowCount THEN RETURN 0 END
-  IF direction = 0 THEN RETURN 0 END
-  IF direction < GO:Last THEN RETURN 0 END
-  IF direction > SELF.ResultSetRowCount THEN RETURN 0 END
+  IF NOT SELF.ResultSetRowCount THEN RETURN 0 END           ! No result set
+  IF direction = 0 THEN RETURN 0 END                        ! No direction informed
+  IF direction < GO:Last THEN RETURN 0 END                  ! Direction out of valid range
+  IF direction > SELF.ResultSetRowCount THEN RETURN GO:Last END ! Direction past last known record
   CASE direction
   OF GO:First
     rowTarget = 1
@@ -434,15 +436,18 @@ rowTarget               LONG
     rowTarget = direction
 
   END
-  SELF.CurrentRow = rowTarget
+  SELF.CurrentRow = rowTarget                               ! Updates current record position
   SELF.ResultSet.row = rowTarget
   SELF.ResultSet.column = 1
   GET( SELF.ResultSet, SELF.ResultSet.row, SELF.ResultSet.column )
-  LOOP i# = 1 TO RECORDS( SELF.Vars )
+  IF ERRORCODE()                                            ! Didn't find the row
+    RETURN 0                                                ! Signals error
+  END
+  LOOP i# = 1 TO RECORDS( SELF.Vars )                       ! Lets update the registered variables
     GET( SELF.Vars, i# )
     SELF.Vars.var = SELF.Get( SELF.Vars.id )
   END
-  RETURN SELF.CurrentRow
+  RETURN SELF.CurrentRow                                    ! Signals a valid record was read
 
 ODBCDataSet.Previous    PROCEDURE
   CODE
@@ -453,10 +458,12 @@ ODBCDataSet.Previous    PROCEDURE
 
 ODBCDataSet.Next        PROCEDURE
   CODE
-  IF NOT SELF.Go( SELF.CurrentRow + 1 )
+  CASE SELF.Go( SELF.CurrentRow + 1 )
+  OF 0 OROF GO:Last
     RETURN GO:Last
+  ELSE
+    RETURN 0
   END
-  RETURN 0
 
 ODBCDataSet.Fetch       PROCEDURE( STRING column, STRING value )
 col                     LONG
@@ -593,7 +600,7 @@ ODBCDataSet.Destruct      PROCEDURE
   SELF.ParentDS &= NULL
 
 ODBCDataSet.ReadMem     PROCEDURE( LONG pLength )
-ReturnValue             BSTRING
+ReturnValue             CSTRING( 65520 )
 PeekBuffer              &STRING
 
   CODE
