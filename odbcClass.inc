@@ -6,6 +6,7 @@ _USE_ASTRINGS_          EQUATE( 1 )                         ! Conservative mode:
       ODBCGetDiagnostic( ODBCClass O )
       ODBCGetDiag( LONG handleType, LONG handle, ODBCClass O, <STRING info> )
       ODBCSQLState( ODBCClass O ), STRING
+      ReadMem( LONG pType, LONG pAddress, LONG pLength ), STRING
     END
 
     MODULE( 'ODBC dll' )
@@ -106,6 +107,42 @@ targetAddr                LONG                              ! Target structure a
 targetSize                LONG                              ! Target sttructure size
                         END
 
+TtagCHAR                CSTRING( 256 ), TYPE
+TtagBIGINT_STRUCT       STRING( 19 ), TYPE
+TtagDATE_STRUCT         GROUP, TYPE                         ! Target structure of type DATE
+year                      SHORT
+month                     USHORT
+day                       USHORT
+                        END
+TtagTIME_STRUCT         GROUP, TYPE                         ! Target structure of type TIME
+hour                      USHORT
+minute                    USHORT
+second                    USHORT
+                        END
+TtagTIMESTAMP_STRUCT    GROUP, TYPE                         ! Target structure of type TIMESTAMP
+year                      SHORT
+month                     USHORT
+day                       USHORT
+hour                      USHORT
+minute                    USHORT
+second                    USHORT
+fraction                  ULONG
+                        END
+TtagINTEGER             LONG, TYPE
+TtagSMALLINT            SHORT, TYPE
+TtagSQL_NUMERIC_STRUCT  GROUP, TYPE                         ! Target structure of type NUMERIC
+precision                 STRING( 1 )
+scale                     STRING( 1 )
+sign                      STRING( 1 )                       ! 1: Positive; 0: Negative
+value                     STRING( 30 )
+                        END
+TtagSQL_GUID            GROUP, TYPE                         ! Target structure of type GUID
+data1                     STRING( 4 )
+data2                     STRING( 2 )
+data3                     STRING( 2 )
+data4                     STRING( 8 )
+                        END
+
 ODBCRowsType            QUEUE, TYPE                         ! Rows that compose a result set
 row                       LONG
 column                    LONG
@@ -145,10 +182,19 @@ hstmt                     LONG, PRIVATE                     ! STATEMENT handle
 connRequest               CSTRING( 1024 ), PRIVATE          ! What we requested to connect
 connectionString          CSTRING( 1024 ), PRIVATE          ! Complete connection as responded by the driver
 PreparedVariables         &ODBCPreparedVars
+tagCHAR                   LIKE( TtagCHAR )
+tagBIGINT_STRUCT          LIKE( TtagBIGINT_STRUCT )
+tagDATE_STRUCT            LIKE( TtagDATE_STRUCT )
+tagTIME_STRUCT            LIKE( TtagTIME_STRUCT )
+tagTIMESTAMP_STRUCT       LIKE( TtagTIMESTAMP_STRUCT )
+tagINTEGER                LIKE( TtagINTEGER )
+tagSMALLINT               LIKE( TtagSMALLINT )
+tagSQL_NUMERIC_STRUCT     LIKE( TtagSQL_NUMERIC_STRUCT )
+tagSQL_GUID               LIKE( TtagSQL_GUID )
 
 Connect                   PROCEDURE( STRING connectString ), LONG
 Prepare                   PROCEDURE( ? variable )
-Exec                      PROCEDURE( STRING sqlCommand ), LONG, PROC
+Exec                      PROCEDURE( STRING sqlCommand ), STRING, PROC
 GetConnectionString       PROCEDURE, STRING
 Disconnect                PROCEDURE, LONG, PROC
 Construct                 PROCEDURE
@@ -178,42 +224,6 @@ hdbc                      LONG, PRIVATE                     ! CONNECTION handle
 hstmt                     LONG, PRIVATE                     ! STATEMENT handle
 dataSetName               CSTRING( 64 ), PROTECTED          ! Humanized name
 
-tagCHAR                   CSTRING( 256 )
-tagBIGINT_STRUCT          STRING( 19 )
-tagDATE_STRUCT            GROUP                             ! Target structure of type DATE
-year                        SHORT
-month                       USHORT
-day                         USHORT
-                          END
-tagTIME_STRUCT            GROUP                             ! Target structure of type TIME
-hour                        USHORT
-minute                      USHORT
-second                      USHORT
-                          END
-tagTIMESTAMP_STRUCT       GROUP                             ! Target structure of type TIMESTAMP
-year                        SHORT
-month                       USHORT
-day                         USHORT
-hour                        USHORT
-minute                      USHORT
-second                      USHORT
-fraction                    ULONG
-                          END
-tagINTEGER                LONG
-tagSMALLINT               SHORT
-tagSQL_NUMERIC_STRUCT     GROUP                             ! Target structure of type NUMERIC
-precision                   STRING( 1 )
-scale                       STRING( 1 )
-sign                        STRING( 1 )                     ! 1: Positive; 0: Negative
-value                       STRING( 30 )
-                          END
-tagSQLGUID                GROUP                             ! Target structure of type GUID
-data1                       STRING( 4 )
-data2                       STRING( 2 )
-data3                       STRING( 2 )
-data4                       STRING( 8 )
-                          END
-
 traceGetCell              LONG
 query                     CSTRING( 8192 )                   ! Default SQL query
 CurrentRow                LONG
@@ -228,6 +238,15 @@ FilterVars                &ODBCRelatedVars                  ! Variable filters r
 Vars                      &ODBCRelatedVars                  ! Variables to be updated
 Dependent                 &ODBCDependentType
 GetCellHistory            &ODBCGetCellHistory
+tagCHAR                   LIKE( TtagCHAR )
+tagBIGINT_STRUCT          LIKE( TtagBIGINT_STRUCT )
+tagDATE_STRUCT            LIKE( TtagDATE_STRUCT )
+tagTIME_STRUCT            LIKE( TtagTIME_STRUCT )
+tagTIMESTAMP_STRUCT       LIKE( TtagTIMESTAMP_STRUCT )
+tagINTEGER                LIKE( TtagINTEGER )
+tagSMALLINT               LIKE( TtagSMALLINT )
+tagSQL_NUMERIC_STRUCT     LIKE( TtagSQL_NUMERIC_STRUCT )
+tagSQL_GUID               LIKE( TtagSQL_GUID )
 
 listBox                   LONG                              ! Listbox to show result set
 listFormat                CSTRING( 1024 )
@@ -261,7 +280,6 @@ AddResetControl           PROCEDURE( LONG feq )                                 
 AddListColumn             PROCEDURE( STRING pColumn, STRING pCaption, STRING pPicture, LONG pWidth=0 )
 Construct                 PROCEDURE
 Destruct                  PROCEDURE
-ReadMem                   PROCEDURE( LONG pLength ), STRING
 HandleClicks              PROCEDURE, BYTE
 Refresh                   PROCEDURE, BYTE, PROC
 Sync                      PROCEDURE

@@ -68,9 +68,23 @@ ODBCClass.Prepare       PROCEDURE( ? variable )
 
 ODBCClass.Exec          PROCEDURE( STRING sqlCommand )
 retCode                 SHORT
+ReturnValue             CSTRING( 4096 )                     ! Long enough for practical return value
 strParsed               BSTRING
 szSQL                   &CSTRING
 lToken                  LONG                                ! Current token ordinal being replaced
+cols                    LONG
+rows                    LONG
+
+colType                 LONG
+targetAddr              LONG
+targetSize              LONG
+lLength                 LONG
+szColumnName            CSTRING( 64 )
+columnNameLength        SHORT
+columnType              SHORT
+columnSize              LONG
+decimalDigits           SHORT
+nullable                SHORT
 
   CODE
   IF NOT SELF.hdbc THEN RETURN SQL_INVALID_HANDLE END
@@ -98,7 +112,74 @@ lToken                  LONG                                ! Current token ordi
   IF RECORDS( SELF.PreparedVariables )                      ! Can't leave any prepared variables for next calls
     FREE( SELF.PreparedVariables )
   END
-  RETURN SQL_SUCCESS
+
+  ReturnValue = retCode                                     ! Defaults return value with op status
+  retCode = SQLNumResultCols( SELF.hstmt, cols )            ! Produced at least one column?
+  IF cols <> 1
+    RETURN ReturnValue
+  END
+
+  IF INRANGE( retCode, SQL_SUCCESS, SQL_SUCCESS_WITH_INFO )
+    retCode = SQLFetch( SELF.hstmt )                        ! Lets read the first row
+  ELSE
+    ODBCGetDiag( SQL_HANDLE_STMT, SELF.hstmt, SELF, 'SQLNumResultCols()' )
+  END
+  IF INRANGE( retCode, SQL_SUCCESS, SQL_SUCCESS_WITH_INFO )
+    retCode = SQLDescribeCol( SELF.hstmt, 1, szColumnName, SIZE( szColumnName ), columnNameLength, |
+      columnType, columnSize, decimalDigits, nullable )
+  ELSE
+    ODBCGetDiag( SQL_HANDLE_STMT, SELF.hstmt, SELF, 'SQLFetch()' )
+  END
+  IF INRANGE( retCode, SQL_SUCCESS, SQL_SUCCESS_WITH_INFO )
+    CASE columnType                                         ! Determine address of target structure
+    OF SQL_GUID
+      targetAddr = ADDRESS( SELF.tagSQL_GUID )
+      targetSize = SIZE( SELF.tagSQL_GUID )
+
+    OF SQL_INTEGER
+      targetAddr = ADDRESS( SELF.tagINTEGER )
+      targetSize = SIZE( SELF.tagINTEGER )
+
+    OF SQL_SMALLINT
+      targetAddr = ADDRESS( SELF.tagSMALLINT )
+      targetSize = SIZE( SELF.tagSMALLINT )
+
+    OF SQL_BIGINT OROF SQL_REAL
+      columnType = SQL_INTEGER
+      targetAddr = ADDRESS( SELF.tagINTEGER )
+      targetSize = SIZE( SELF.tagINTEGER )
+
+    OF SQL_TYPE_DATE OROF SQL_INTERVAL_DAY
+      targetAddr = ADDRESS( SELF.tagDATE_STRUCT )
+      targetSize = SIZE( SELF.tagDATE_STRUCT )
+
+    OF SQL_TYPE_TIMESTAMP
+      targetAddr = ADDRESS( SELF.tagTIMESTAMP_STRUCT )
+      targetSize = SIZE( SELF.tagTIMESTAMP_STRUCT )
+
+    OF SQL_TYPE_TIME
+      targetAddr = ADDRESS( SELF.tagTIME_STRUCT )
+      targetSize = SIZE( SELF.tagTIME_STRUCT )
+
+    ELSE
+      columnType = SQL_CHAR
+      targetAddr = ADDRESS( SELF.tagChar )
+      targetSize = columnSize
+    END
+
+    retCode = SQLGetData( SELF.hstmt, 1, columnType, targetAddr, targetSize, ADDRESS( lLength ) )
+  ELSE
+    ODBCGetDiag( SQL_HANDLE_STMT, SELF.hstmt, SELF, 'SQLDescribeCol()' )
+  END
+  IF INRANGE( retCode, SQL_SUCCESS, SQL_SUCCESS_WITH_INFO )
+    IF lLength NOT < 0                                      ! Something to read
+      ReturnValue = ReadMem( columnType, targetAddr, lLength )
+    END
+  ELSE
+    ODBCGetDiag( SQL_HANDLE_STMT, SELF.hstmt, SELF, 'SQLGetData()' )
+  END
+
+  RETURN ReturnValue                                        ! Returns either the op status code, or cell( 1, 1 ) from query result
 
 ODBCClass.Disconnect    PROCEDURE
   CODE
@@ -247,8 +328,8 @@ szColumnName            CSTRING( 64 )
 
       CASE columnType                                       ! Determine address of target structure
       OF SQL_GUID
-        SELF.ResultSetCols.targetAddr = ADDRESS( SELF.tagSQLGUID )
-        SELF.ResultSetCols.targetSize = SIZE( SELF.tagSQLGUID )
+        SELF.ResultSetCols.targetAddr = ADDRESS( SELF.tagSQL_GUID )
+        SELF.ResultSetCols.targetSize = SIZE( SELF.tagSQL_GUID )
 
       OF SQL_INTEGER
         SELF.ResultSetCols.targetAddr = ADDRESS( SELF.tagINTEGER )
@@ -308,7 +389,7 @@ szColumnName            CSTRING( 64 )
       SELF.ResultSet.column = i#
       SELF.ResultSet.length = lLength
       IF INRANGE( retCode, SQL_SUCCESS, SQL_SUCCESS_WITH_INFO )
-        SELF.ResultSet.value = SELF.ReadMem( lLength )
+        SELF.ResultSet.value = ReadMem( SELF.ResultSetCols.type, SELF.ResultSetCols.targetAddr, lLength )
   OMIT( '//', _USE_ASTRINGS_ )
         SELF.ResultSet.search = SELF.ResultSet.value
   //
@@ -599,64 +680,6 @@ ODBCDataSet.Destruct      PROCEDURE
 
   SELF.ParentDS &= NULL
 
-ODBCDataSet.ReadMem     PROCEDURE( LONG pLength )
-ReturnValue             CSTRING( 65520 )
-PeekBuffer              &STRING
-
-  CODE
-  CASE SELF.ResultSetCols.type
-  OF SQL_CHAR OROF SQL_VARCHAR OROF SQL_LONGVARCHAR         ! Atenção, por que a variável pode variar no comprimento
-    PeekBuffer &= NEW STRING( pLength + 1 )
-    PEEK( SELF.ResultSetCols.targetAddr, PeekBuffer )
-    ReturnValue = PeekBuffer
-    DISPOSE( PeekBuffer )
-
-  OF SQL_GUID
-    PEEK( SELF.ResultSetCols.targetAddr, SELF.tagSQLGUID )
-    ReturnValue = SELF.tagSQLGUID
-
-  OF SQL_INTEGER
-    PEEK( SELF.ResultSetCols.targetAddr, SELF.tagINTEGER )
-    ReturnValue = SELF.tagINTEGER
-
-  OF SQL_SMALLINT
-    PEEK( SELF.ResultSetCols.targetAddr, SELF.tagSMALLINT )
-    ReturnValue = SELF.tagSMALLINT
-
-  OF SQL_DECIMAL OROF SQL_NUMERIC
-    PEEK( SELF.ResultSetCols.targetAddr, SELF.tagSQL_NUMERIC_STRUCT )
-    IF NOT SELF.tagSQL_NUMERIC_STRUCT THEN ReturnValue = '-' END
-    ReturnValue = ReturnValue & SELF.tagSQL_NUMERIC_STRUCT.value & |
-      ',' & SELF.tagSQL_NUMERIC_STRUCT.precision & |
-      ',' & SELF.tagSQL_NUMERIC_STRUCT.scale
-
-  OF SQL_BIGINT OROF SQL_REAL
-    PEEK( SELF.ResultSetCols.targetAddr, SELF.tagBIGINT_STRUCT )
-    ReturnValue = SELF.tagBIGINT_STRUCT
-
-  OF SQL_TYPE_DATE OROF SQL_INTERVAL_DAY
-    PEEK( SELF.ResultSetCols.targetAddr, SELF.tagDATE_STRUCT )
-    ReturnValue = FORMAT( SELF.tagDATE_STRUCT.day, @N02 ) & '/' & |
-      FORMAT( SELF.tagDATE_STRUCT.month, @N02 ) & '/' & SELF.tagDATE_STRUCT.year
-
-  OF SQL_TYPE_TIMESTAMP
-    PEEK( SELF.ResultSetCols.targetAddr, SELF.tagTIMESTAMP_STRUCT )
-    ReturnValue = FORMAT( SELF.tagTIMESTAMP_STRUCT.day, @n02 ) & '/' & |
-      FORMAT( SELF.tagTIMESTAMP_STRUCT.month, @n02 ) & '/' & |
-      SELF.tagTIMESTAMP_STRUCT.year & ' ' & |
-      FORMAT( SELF.tagTIMESTAMP_STRUCT.hour, @N02 ) & ':' & |
-      FORMAT( SELF.tagTIMESTAMP_STRUCT.minute, @n02 ) & ':' & |
-      FORMAT( SELF.tagTIMESTAMP_STRUCT.second, @n02 )
-
-  OF SQL_TYPE_TIME
-    PEEK( SELF.ResultSetCols.targetAddr, SELF.tagTIME_STRUCT )
-    ReturnValue = FORMAT( SELF.tagTIME_STRUCT.hour, @N02 ) & ':' & |
-      FORMAT( SELF.tagTIME_STRUCT.minute, @n02 ) & ':' & |
-      FORMAT( SELF.tagTIME_STRUCT.second, @n02 )
-      ReturnValue = DEFORMAT( ReturnValue, @t04 )
-  END
-  RETURN ReturnValue
-
 ODBCDataSet.ExportCSV   PROCEDURE
 row                     LONG                                          ! Current row counter
 col                     LONG                                          ! Current col counter
@@ -901,7 +924,8 @@ szValue                 CSTRING( 256 )
     END
   END
 
-  SELF.Exec( sql, SELF.listBox )                            ! Update dataset's list control
+  SELF.Exec( sql )
+  SELF.Load()                                               ! Update dataset's list control
   IF SELF.GetCell( 1, 1 ) THEN pos = 1 ELSE pos = 2 END     ! Are there any results?
   LOOP i# = 1 TO RECORDS( SELF.Dependent )                  ! Loops trough all dependent objects
     GET( SELF.Dependent, i# )
@@ -1012,7 +1036,7 @@ ODBCGetDiag             PROCEDURE( LONG handleType, LONG handle, ODBCClass O, <S
 lRet                    LONG
 diagSQLState            CSTRING( 6 )                        ! Diagnostic variables
 diagNativeError         LONG
-diagNativertext         CSTRING( 256 )
+diagNativeText          CSTRING( 256 )
 diagMessageText         CSTRING( 1024 )
 diagTextLength          LONG
 
@@ -1030,7 +1054,7 @@ diagTextLength          LONG
   SQLGetDiagRec( handleType, handle, 1, diagSQLState, |
     diagNativeError, diagMessageText, SIZE( diagMessageText ), diagTextLength )
 
-  IF diagNativeError = 'HY000'
+  IF NOT diagNativeError
     RETURN
   END
 
@@ -1049,4 +1073,72 @@ diagTextLength          LONG
     ODBCGetDiagCalls.status = 2
     PUT( ODBCGetDiagCalls )
   END
+
+ReadMem                 PROCEDURE( LONG pType, LONG pAddress, LONG pLength )
+ReturnValue             CSTRING( 65520 )
+PeekBuffer              &STRING
+tagCHAR                 LIKE( TtagCHAR )
+tagBIGINT_STRUCT        LIKE( TtagBIGINT_STRUCT )
+tagDATE_STRUCT          LIKE( TtagDATE_STRUCT )
+tagTIME_STRUCT          LIKE( TtagTIME_STRUCT )
+tagTIMESTAMP_STRUCT     LIKE( TtagTIMESTAMP_STRUCT )
+tagINTEGER              LIKE( TtagINTEGER )
+tagSMALLINT             LIKE( TtagSMALLINT )
+tagSQL_NUMERIC_STRUCT   LIKE( TtagSQL_NUMERIC_STRUCT )
+tagSQL_GUID             LIKE( TtagSQL_GUID )
+
+  CODE
+
+  CASE pType
+  OF SQL_CHAR OROF SQL_VARCHAR OROF SQL_LONGVARCHAR         ! Atenção, porque a variável pode variar no comprimento
+    PeekBuffer &= NEW STRING( pLength + 1 )
+    PEEK( pAddress, PeekBuffer )
+    ReturnValue = PeekBuffer
+    DISPOSE( PeekBuffer )
+
+  OF SQL_GUID
+    PEEK( pAddress, tagSQL_GUID )
+    ReturnValue = tagSQL_GUID
+
+  OF SQL_INTEGER
+    PEEK( pAddress, tagINTEGER )
+    ReturnValue = tagINTEGER
+
+  OF SQL_SMALLINT
+    PEEK( pAddress, tagSMALLINT )
+    ReturnValue = tagSMALLINT
+
+  OF SQL_DECIMAL OROF SQL_NUMERIC
+    PEEK( pAddress, tagSQL_NUMERIC_STRUCT )
+    IF NOT tagSQL_NUMERIC_STRUCT THEN ReturnValue = '-' END
+    ReturnValue = ReturnValue & tagSQL_NUMERIC_STRUCT.value & |
+      ',' & tagSQL_NUMERIC_STRUCT.precision & |
+      ',' & tagSQL_NUMERIC_STRUCT.scale
+
+  OF SQL_BIGINT OROF SQL_REAL
+    PEEK( pAddress, tagBIGINT_STRUCT )
+    ReturnValue = tagBIGINT_STRUCT
+
+  OF SQL_TYPE_DATE OROF SQL_INTERVAL_DAY
+    PEEK( pAddress, tagDATE_STRUCT )
+    ReturnValue = FORMAT( tagDATE_STRUCT.day, @N02 ) & '/' & |
+      FORMAT( tagDATE_STRUCT.month, @N02 ) & '/' & tagDATE_STRUCT.year
+
+  OF SQL_TYPE_TIMESTAMP
+    PEEK( pAddress, tagTIMESTAMP_STRUCT )
+    ReturnValue = FORMAT( tagTIMESTAMP_STRUCT.day, @n02 ) & '/' & |
+      FORMAT( tagTIMESTAMP_STRUCT.month, @n02 ) & '/' & |
+      tagTIMESTAMP_STRUCT.year & ' ' & |
+      FORMAT( tagTIMESTAMP_STRUCT.hour, @N02 ) & ':' & |
+      FORMAT( tagTIMESTAMP_STRUCT.minute, @n02 ) & ':' & |
+      FORMAT( tagTIMESTAMP_STRUCT.second, @n02 )
+
+  OF SQL_TYPE_TIME
+    PEEK( pAddress, tagTIME_STRUCT )
+    ReturnValue = FORMAT( tagTIME_STRUCT.hour, @N02 ) & ':' & |
+      FORMAT( tagTIME_STRUCT.minute, @n02 ) & ':' & |
+      FORMAT( tagTIME_STRUCT.second, @n02 )
+      ReturnValue = DEFORMAT( ReturnValue, @t04 )
+  END
+  RETURN ReturnValue
 
