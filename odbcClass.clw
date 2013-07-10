@@ -269,7 +269,7 @@ ODBCDataSet.Exec        PROCEDURE( STRING sqlCommand, LONG feq=0 )
   CODE
   IF NOT sqlCommand THEN RETURN SQL_ERROR END
   IF SELF.Exec( sqlCommand ) = SQL_SUCCESS
-    SELF.LoadResult
+    SELF.Load()
     IF feq AND feq{ PROP:Type } = CREATE:List
       SELF.LoadList( feq )
     END
@@ -290,8 +290,10 @@ targetFeq               LONG
   ELSE
     targetFeq = SELF.listBox
   END
-  SELF.LoadList( targetFeq )
-  GET( SELF.ResultSet, 0 )
+  IF targetFeq
+    SELF.LoadList( targetFeq )
+  END
+  SELF.CurrentRow = 0
 
 ODBCDataSet.LoadResult  PROCEDURE
 retCode                 SHORT
@@ -508,10 +510,10 @@ rowTarget               LONG
   CASE direction
   OF GO:First
     rowTarget = 1
+    SELF.CurrentRow = 0
 
   OF GO:Last
     GET( SELF.ResultSet, RECORDS( SELF.ResultSet ) )
-    rowTarget = SELF.ResultSet.row
 
   ELSE
     rowTarget = direction
@@ -574,14 +576,20 @@ col                     LONG
   RETURN 0                                                  ! If reached here, record found
 
 ODBCDataSet.Get         PROCEDURE( STRING column )
+ColumnNumber            LONG
   CODE
   IF NOT SELF.ResultSetRowCount THEN RETURN '' END
   IF NOT POINTER( SELF.ResultSet )
-    GET( SELF.ResultSet, 1 )
+    SELF.Go( GO:First )
   END
-  SELF.ResultSetCols.key = UPPER( column )
-  GET( SELF.ResultSetCols, SELF.ResultSetCols.key )
-  IF ERRORCODE() THEN RETURN '' END
+  IF NUMERIC( column )                                      ! Accessing by column number
+    ColumnNumber = column
+    GET( SELF.ResultSetCols, ColumnNumber )
+  ELSE                                                      ! Accessing by column name
+    SELF.ResultSetCols.key = UPPER( column )
+    GET( SELF.ResultSetCols, SELF.ResultSetCols.key )
+  END
+  IF ERRORCODE() THEN RETURN '' END                         ! Return if didn't find the column
   RETURN SELF.GetCell( SELF.ResultSet.row, POINTER( SELF.ResultSetCols ) )
 
 ODBCDataSet.GetCurrentRow PROCEDURE
