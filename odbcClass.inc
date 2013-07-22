@@ -11,10 +11,11 @@ _USE_ASTRINGS_          EQUATE( 1 )                         ! Conservative mode:
 
     MODULE( 'ODBC dll' )
       GetDesktopWindow, LONG, PASCAL
-      SQLAllocHandle( SHORT, LONG, *LONG ), LONG, PASCAL
+      SQLAllocHandle( SHORT, LONG, *LONG ), SHORT, PASCAL
       SQLDriverConnect( LONG, LONG, *CSTRING, SHORT, *CSTRING, SHORT, LONG, LONG ), LONG, PASCAL, RAW, NAME( 'SQLDriverConnectA' )
       SQLSetEnvAttr( LONG, LONG, LONG, LONG ), SHORT, PASCAL
       SQLSetConnectAttr( LONG, LONG, LONG, LONG ), PASCAL
+      SQLBrowseConnect( LONG, *CSTRING, SHORT, *CSTRING, SHORT, *SHORT ), SHORT, PASCAL, RAW, NAME( 'SQLBrowseConnectA' )
       SQLDisconnect( LONG ), SHORT, PASCAL
       SQLDriverConnect( LONG, LONG, *CSTRING, SHORT, *CSTRING, SHORT, *SHORT, USHORT ), LONG, PASCAL, RAW, NAME( 'SQLDriverConnectA' )
       SQLPrepare( LONG, *CSTRING, LONG ), SHORT, PASCAL, RAW, NAME( 'SQLPrepareA' )
@@ -25,6 +26,7 @@ _USE_ASTRINGS_          EQUATE( 1 )                         ! Conservative mode:
       SQLGetData( LONG, USHORT, SHORT, LONG, LONG, LONG ), SHORT, PASCAL
       SQLFreeHandle( LONG, LONG ), LONG, PASCAL, PROC
       SQLGetDiagRec( SHORT, LONG, SHORT, *CSTRING, *LONG, *CSTRING, SHORT, SHORT ), LONG, PASCAL, RAW, PROC, NAME( 'SQLGetDiagRecA' )
+      SQLDrivers( LONG, LONG, *CSTRING, LONG, *LONG, *CSTRING, LONG, *LONG ), SHORT, PASCAL, RAW, NAME( 'SQLDriversA' )
     END
   END
 
@@ -33,6 +35,7 @@ SQL_ERROR               EQUATE( -1 )
 SQL_SUCCESS             EQUATE( 0 )
 SQL_SUCCESS_WITH_INFO   EQUATE( 1 )
 SQL_STILL_EXECUTING     EQUATE( 2 )
+SQL_NEED_DATA           EQUATE( 99 )
 SQL_NO_DATA             EQUATE( 100 )
 SQL_PARAM_DATA_AVAILABLE EQUATE( 101 )
 
@@ -44,6 +47,9 @@ SQL_HANDLE_ENV          EQUATE( 1 )
 SQL_HANDLE_DBC          EQUATE( 2 )
 SQL_HANDLE_STMT         EQUATE( 3 )
 SQL_HANDLE_DESC         EQUATE( 4 )
+
+SQL_FETCH_NEXT          EQUATE( 1 )
+SQL_FETCH_FIRST         EQUATE( 2 )
 
 SQL_INTERVAL_MINUTE_TO_SECOND EQUATE( -92 )
 SQL_INTERVAL_HOUR_TO_SECOND EQUATE( -91 )

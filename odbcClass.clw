@@ -31,30 +31,22 @@ retCode                 SHORT
 lConnLength             LONG
 
   CODE
-  retCode = SQLAllocHandle( SQL_HANDLE_ENV, SQL_NULL_HANDLE, SELF.henv )
-  IF INRANGE( retCode, SQL_SUCCESS, SQL_SUCCESS_WITH_INFO )
+  IF NOT INRANGE( SQLAllocHandle( SQL_HANDLE_ENV, SQL_NULL_HANDLE, SELF.henv ), SQL_SUCCESS, SQL_SUCCESS_WITH_INFO ) THEN RETURN SQL_ERROR END
+  IF NOT INRANGE( SQLSetEnvAttr( SELF.henv, SQL_ATTR_ODBC_VERSION, SQL_OV_ODBC3, SQL_IS_INTEGER ), SQL_SUCCESS, SQL_SUCCESS_WITH_INFO ) THEN RETURN SQL_ERROR END
+  IF NOT INRANGE( SQLAllocHandle( SQL_HANDLE_DBC, SELF.henv, SELF.hdbc ), SQL_SUCCESS, SQL_SUCCESS_WITH_INFO ) THEN RETURN SQL_ERROR END
+  SQLSetConnectAttr( SELF.hdbc, SQL_LOGIN_TIMEOUT, 5, 0 )
 
-    retCode = SQLSetEnvAttr( SELF.henv, SQL_ATTR_ODBC_VERSION, SQL_OV_ODBC3, SQL_IS_INTEGER )
-    IF INRANGE( retCode, SQL_SUCCESS, SQL_SUCCESS_WITH_INFO )
+  desktopHnd = GetDesktopWindow()
+  SELF.connRequest = connectString
+  IF NOT INRANGE( SQLDriverConnect( SELF.hdbc, desktopHnd, SELF.connRequest, |
+    LEN( SELF.connRequest ), SELF.connectionString, SIZE( SELF.connectionString ), |
+    lConnLength, SQL_DRIVER_NOPROMPT ), SQL_SUCCESS, SQL_SUCCESS_WITH_INFO )
 
-      retCode = SQLAllocHandle( SQL_HANDLE_DBC, SELF.henv, SELF.hdbc )
-      IF INRANGE( retCode, SQL_SUCCESS, SQL_SUCCESS_WITH_INFO )
-
-        SQLSetConnectAttr( SELF.hdbc, SQL_LOGIN_TIMEOUT, 5, 0 )
-        IF INRANGE( retCode, SQL_SUCCESS, SQL_SUCCESS_WITH_INFO )
-          desktopHnd = GetDesktopWindow()
-          SELF.connRequest = connectString
-          retCode = SQLDriverConnect( SELF.hdbc, desktopHnd, SELF.connRequest, |
-            LEN( SELF.connRequest ), SELF.connectionString, SIZE( SELF.connectionString ), |
-            lConnLength, SQL_DRIVER_NOPROMPT )
-
-          SQLFreeHandle( SQL_HANDLE_ENV, SELF.henv )
-        END
-      END
-    END
+    RETURN SQL_ERROR
   END
 
-  RETURN retCode
+  SQLFreeHandle( SQL_HANDLE_ENV, SELF.henv )
+  RETURN SQL_SUCCESS
 
 ODBCClass.GetConnectionString PROCEDURE
   CODE
@@ -379,7 +371,7 @@ szColumnName            CSTRING( 64 )
       GET( SELF.ResultSetCols, i# )
 
       retCode = SQLGetData( SELF.hstmt, i#, SELF.ResultSetCols.type, |
-        SELF.ResultSetCols.targetAddr, SELF.ResultSetCols.targetSize, ADDRESS( lLength ) )
+        SELF.ResultSetCols.targetAddr, SELF.ResultSetCols.targetSize + 1, ADDRESS( lLength ) )
 
       IF lLength < 1                                        ! Nothing to read
         CYCLE                                               ! don't even waste time
@@ -1099,7 +1091,7 @@ tagSQL_GUID             LIKE( TtagSQL_GUID )
 
   CASE pType
   OF SQL_CHAR OROF SQL_VARCHAR OROF SQL_LONGVARCHAR         ! Atenção, porque a variável pode variar no comprimento
-    PeekBuffer &= NEW STRING( pLength + 1 )
+    PeekBuffer &= NEW STRING( pLength )
     PEEK( pAddress, PeekBuffer )
     ReturnValue = PeekBuffer
     DISPOSE( PeekBuffer )
@@ -1149,4 +1141,3 @@ tagSQL_GUID             LIKE( TtagSQL_GUID )
       ReturnValue = DEFORMAT( ReturnValue, @t04 )
   END
   RETURN ReturnValue
-
