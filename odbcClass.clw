@@ -415,18 +415,17 @@ colToken                CSTRING( 32 )
   END
 
   SELF.BindDefaultObject()                                  ! Make sure there's one ODBC object bound
-  LOOP i# = 1 TO SELF.ResultSetColCount
+  LOOP i# = 1 TO RECORDS( SELF.ResultSetCols )
     GET( SELF.ResultSetCols, i# )
 
     colCaption = SELF.ResultSetCols.name
-    colWidth = SELF.ResultSetCols.size
-    IF colWidth > 200 THEN colWidth = 200 END
     colToken = ''
 
     SELF.listColumns.colName = SELF.ResultSetCols.key       ! Prepare to locate a matching column, by KEY
     GET( SELF.listColumns, SELF.listColumns.colName )
     IF NOT ERRORCODE()                                      ! Found an entry
       IF NOT SELF.listColumns.visible THEN CYCLE END        ! If not visible, skipt format preparation
+
       IF SELF.listColumns.width
         colWidth = SELF.listColumns.width
       END
@@ -445,9 +444,9 @@ colToken                CSTRING( 32 )
 
     END
 
-    IF NOT colWidth                                         ! No suitable width could be determined, lets calculate it
-      colWidth = CHOOSE( INT( LOG10( colWidth * 10 ) ), 30, 60, 100, 150, 200 )
-    END
+    colWidth = INT( LOG10( SELF.ResultSetCols.size ) * 100 ) - 100
+    IF colWidth < 30 THEN colWidth = 30 END
+    IF colWidth > 150 THEN colWidth = 150 END
 
     CASE SELF.ResultSetCols.type
     OF SQL_CHAR OROF SQL_VARCHAR
