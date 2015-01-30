@@ -18,11 +18,12 @@ While this allows for clearer documentation and stronger system stability, it co
 I needed much more flexibility, whilst being able to provide good stability. Also, I wanted to be able to fill a grid/listbox with just one line of code. Then I remembered the old Clipper command, BROWSE.
 
 With this class, the programmer can:
-
+<pre><code>
   db.Connect( connctionString )
   ds.Init( db )
   ds.Exec( 'SELECT id, name FROM myTable ORDER BY id', ?List )
-  
+</code></pre>
+
 The above sequence will:
 
 1) Connect to a database, creating a connection object (db);
