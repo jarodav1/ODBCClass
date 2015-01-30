@@ -5,14 +5,14 @@ Clarion class to access databases without the need to use a DCT
 
 This class allows a programmer to access a database via ODBC without the need to define a table.
 Generally, a table needs to be defined prior to access any file, like:
-
+<pre><code>
 MyTable       FILE, DRIVER( 'ODBC' ), NAME( 'public.myTable' ), OWNER( szConn )
 RECORD          RECORD
 id                LONG
 name              CSTRING( 200 )
                 END
               END
-              
+</code></pre>
 While this allows for clearer documentation and stronger system stability, it contributes to lower productivity in the sense that it forces the programmer to maintain an updated database dictionary.
 
 I needed much more flexibility, whilst being able to provide good stability. Also, I wanted to be able to fill a grid/listbox with just one line of code. Then I remembered the old Clipper command, BROWSE.
