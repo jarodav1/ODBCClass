@@ -291,6 +291,7 @@ Refresh                   PROCEDURE, BYTE, PROC
 Sync                      PROCEDURE
 SyncDependents            PROCEDURE
 SetDebugKey               PROCEDURE( LONG feq )
+ValidateQuery             PROCEDURE(STRING pQuery),LONG 
                         END
 
   PRAGMA( 'link(odbc32.lib)' )
