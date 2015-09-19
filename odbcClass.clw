@@ -83,7 +83,8 @@ nullable                SHORT
   retCode = SQLAllocHandle( SQL_HANDLE_STMT, SELF.hdbc, SELF.hstmt )
   IF NOT INRANGE( retCode, SQL_SUCCESS, SQL_SUCCESS_WITH_INFO )
     RETURN retCode
-  END
+    END
+  
   strParsed = sqlCommand
   IF RECORDS( SELF.PreparedVariables )                      ! Are there any prepared variable to substitute query tokens?
     LOOP i# = 1 TO RECORDS( SELF.PreparedVariables )
@@ -96,6 +97,7 @@ nullable                SHORT
   END
   szSQL &= NEW CSTRING( LEN( CLIP( strParsed ) ) + 1 )      ! Must use CSTRING to cope with ODBC API prototype
   szSQL = strParsed
+  retCode=SQLPrepare(SELF.hstmt, szSQL, SQL_NTS )
   retCode = SQLExecDirect( SELF.hstmt, szSQL, SQL_NTS )
   IF NOT INRANGE( retCode, SQL_SUCCESS, SQL_SUCCESS_WITH_INFO )
     ODBCGetDiag( SQL_HANDLE_STMT, SELF.hstmt, SELF )
@@ -258,7 +260,11 @@ szSQL                   &CSTRING
   RETURN SQL_SUCCESS
 
 ODBCDataSet.Exec        PROCEDURE( STRING sqlCommand, LONG feq=0 )
-  CODE
+    CODE
+  IF SELF.ValidateQuery(sqlCommand)
+      MESSAGE('El query contiene sentencias no permitidas')
+      RETURN SQL_ERROR
+  END
   IF NOT sqlCommand THEN RETURN SQL_ERROR END
   IF SELF.Exec( sqlCommand ) = SQL_SUCCESS
     SELF.Load()
@@ -268,14 +274,34 @@ ODBCDataSet.Exec        PROCEDURE( STRING sqlCommand, LONG feq=0 )
   END
   RETURN SQL_SUCCESS
 
+!------------------------------------------------------
+!Implementacion de validacion para que el query no
+!contenga  sentencias de modificacion de estructura de
+!tablas    
+!------------------------------------------------------    
+ODBCDataSet.ValidateQuery   PROCEDURE(STRING pQuery)!LONG
+RetCode                         LONG
+    CODE
+        IF INSTRING('ALTER',UPPER(pQuery),1,1)
+            RetCode=1
+        END   
+        IF INSTRING('ADD',UPPER(pQuery),1,1)
+            RetCode=1
+        END
+        IF INSTRING('DROP',UPPER(pQuery),1,1)
+            RetCode=1
+        END
+        RETURN RetCode        
+    
+    
 ODBCDataSet.Load        PROCEDURE( LONG feq=0 )
 targetFeq               LONG
 
   CODE
   IF NOT SELF.query THEN RETURN END
-  IF NOT INLIST( SELF.Exec( SELF.query ), SQL_SUCCESS, SQL_SUCCESS_WITH_INFO )
-    RETURN
-  END
+   !IF NOT INLIST( SELF.Exec( SELF.query ), SQL_SUCCESS, SQL_SUCCESS_WITH_INFO )
+   ! RETURN
+  !END
   SELF.LoadResult
   IF feq
     targetFeq = feq
@@ -283,7 +309,7 @@ targetFeq               LONG
     targetFeq = SELF.listBox
   END
   IF targetFeq
-    SELF.LoadList( targetFeq )
+      SELF.LoadList( targetFeq )
   END
   SELF.CurrentRow = 0
 
@@ -301,7 +327,7 @@ nullable                SHORT
 szColumnName            CSTRING( 64 )
 
   CODE
-  SELF.BindDefaultObject()                                  ! Make sure there's one ODBC object bound
+  SELF.BindDefaultObject()                                   ! Make sure there's one ODBC object bound
   retCode = SQLNumResultCols( SELF.hstmt, cols )            ! How many columns the query produced?
   FREE( SELF.ResultSetCols )
   IF NOT cols                                               ! No columns produced
@@ -309,7 +335,7 @@ szColumnName            CSTRING( 64 )
     RETURN                                                  ! and don't waste time processing
   END
   LOOP i# = 1 TO cols                                       ! Process all returned columns
-    retCode = SQLDescribeCol( SELF.hstmt, i#, szColumnName, SIZE( szColumnName ), columnNameLength, |
+      retCode = SQLDescribeCol( SELF.hstmt, i#, szColumnName, SIZE( szColumnName ), columnNameLength, |
       columnType, columnSize, decimalDigits, nullable )
 
     IF INRANGE( retCode, SQL_SUCCESS, SQL_SUCCESS_WITH_INFO )
@@ -361,6 +387,9 @@ szColumnName            CSTRING( 64 )
   END
 
   FREE( SELF.ResultSet )                                    ! Wipes out the previous result set
+    
+  SELF.BindDefaultObject()      
+  !retCode=0      
   LOOP
     retCode = SQLFetch( SELF.hstmt )                        ! Read the next row in result set
     IF NOT INRANGE( retCode, SQL_SUCCESS, SQL_SUCCESS_WITH_INFO )
@@ -387,7 +416,7 @@ szColumnName            CSTRING( 64 )
   OMIT( '//', _USE_ASTRINGS_ )
         SELF.ResultSet.search = SELF.ResultSet.value
   //
-        ADD( SELF.ResultSet )
+            ADD( SELF.ResultSet )
       ELSE
         ODBCGetDiag( SQL_HANDLE_STMT, SELF.hstmt, SELF.Connection, 'LoadResult( ' & SELF.query & ' )' )
       END
@@ -406,15 +435,18 @@ colToken                CSTRING( 32 )
   CODE
   IF feq{ PROP:Type } <> CREATE:List THEN RETURN END        ! Avoid wasting time and jeopardizing the code if control is no a listbox
   IF NOT RECORDS( SELF.ResultSet )
+    MESSAGE('NO HAY REGISTROS A MOSTRAR')        
     RETURN
   END
 
   IF SELF.listFormat                                        ! If there's already a format
     feq{ PROP:Format } = SELF.listFormat                    ! Apply the stored format to listbox
-    RETURN                                                  ! and return
+     RETURN                                                  ! and return
   END
 
-  SELF.BindDefaultObject()                                  ! Make sure there's one ODBC object bound
+  SELF.BindDefaultObject()   
+                               ! Make sure there's one ODBC object bound
+
   LOOP i# = 1 TO RECORDS( SELF.ResultSetCols )
     GET( SELF.ResultSetCols, i# )
 
@@ -424,7 +456,7 @@ colToken                CSTRING( 32 )
     SELF.listColumns.colName = SELF.ResultSetCols.key       ! Prepare to locate a matching column, by KEY
     GET( SELF.listColumns, SELF.listColumns.colName )
     IF NOT ERRORCODE()                                      ! Found an entry
-      IF NOT SELF.listColumns.visible THEN CYCLE END        ! If not visible, skipt format preparation
+        IF NOT SELF.listColumns.visible THEN CYCLE    END        ! If not visible, skipt format preparation
 
       IF SELF.listColumns.width
         colWidth = SELF.listColumns.width
@@ -438,6 +470,7 @@ colToken                CSTRING( 32 )
       END
 
     ELSE                                                    ! Result set column was not found
+      !MESSAGE('NO ENCONTRO LA KEY')  
       IF RECORDS( SELF.listColumns )                        ! But is there an override columns collections?
         CYCLE                                               ! if so, then this read column can't go to the listbox
       END
@@ -715,9 +748,9 @@ l                           STRING( 65520 )
   0{ PROP:Text } = 'Exportando CSV'
   ?csvProgress{ PROP:RangeHigh } = SELF.ResultSetRowCount             ! Ajusta a largura da barra de progresso, com a quantidade de registros
   DISPLAY()
-  STREAM( ODBCCSVFile )                                               ! Arma escritas em sequÍncia no disco, sem atualizaÁ„o do diretÛrio
+  STREAM( ODBCCSVFile )                                               ! Arma escritas em sequ√™ncia no disco, sem atualiza√ß√£o do diret√≥rio
 
-  LOOP i# = 1 TO SELF.ResultSetColCount                               ! Monta a linha de cabeÁalho
+  LOOP i# = 1 TO SELF.ResultSetColCount                               ! Monta a linha de cabe√ßalho
     GET( SELF.ResultSetCols, i# )
     IF i# > 1
       ODBCCSVFile.l = CLIP( ODBCCSVFile.l ) & ';'
@@ -726,17 +759,17 @@ l                           STRING( 65520 )
   END
   ADD( ODBCCSVFile )
   LOOP row = 1 TO SELF.ResultSetRowCount                              ! Percorre todas as linhas
-    SELF.Go( row )                                                    ! LÍ a prÛxima linha
+    SELF.Go( row )                                                    ! L√™ a pr√≥xima linha
     CLEAR( ODBCCSVFile.RECORD )                                       ! Limpa o registro do arquivo
-    IF not row % 100                                                  ! A cada 100 iteraÁıes
+    IF not row % 100                                                  ! A cada 100 itera√ß√µes
       ?csvProgress{ PROP:Progress } = row                             ! Atualiza a barra de progresso
       DISPLAY()                                                       ! e apresenta a janela
     END
     LOOP col = 1 TO SELF.ResultSetColCount                            ! Estando em uma linha, percorre todas as colunas
-      IF col > 1                                                      ! J· lemos ao menos uma coluna?
+      IF col > 1                                                      ! J√° lemos ao menos uma coluna?
         ODBCCSVFile.l = CLIP( ODBCCSVFile.l ) & ';'                   ! Vamos colocar o separador de colunas
       END
-      ODBCCSVFile.l = CLIP( ODBCCSVFile.l ) & SELF.GetCell( row, col ) ! Compıe a linha
+      ODBCCSVFile.l = CLIP( ODBCCSVFile.l ) & SELF.GetCell( row, col ) ! Comp√µe a linha
     END
     ADD( ODBCCSVFile )                                                ! Ao terminar de processar as colunas, inclui o registro
   END
@@ -765,7 +798,7 @@ registro                BSTRING
   0{ PROP:Text } = 'Copiando para o clipboard'
   ?csvProgress{ PROP:RangeHigh } = SELF.ResultSetRowCount             ! Ajusta a largura da barra de progresso, com a quantidade de registros
   DISPLAY()
-  LOOP i# = 1 TO SELF.ResultSetColCount                               ! Monta a linha de cabeÁalho
+  LOOP i# = 1 TO SELF.ResultSetColCount                               ! Monta a linha de cabe√ßalho
     GET( SELF.ResultSetCols, i# )
     IF i# > 1
       strClipboard = CLIP( strClipboard ) & '<9>'
@@ -774,8 +807,8 @@ registro                BSTRING
   END
   strClipboard = strClipboard & '<13,10>'
   LOOP row = 1 TO SELF.ResultSetRowCount                              ! Percorre todas as linhas
-    SELF.Go( row )                                                    ! LÍ a prÛxima linha
-    IF not row % 100                                                  ! A cada 100 iteraÁıes
+    SELF.Go( row )                                                    ! L√™ a pr√≥xima linha
+    IF not row % 100                                                  ! A cada 100 itera√ß√µes
       IF KEYBOARD()                                                   ! Anything in the keyboard?
         ASK                                                           ! Read the buffer
         IF KEYCODE() = EscKey                                         ! User wants to cancel the process
@@ -787,10 +820,10 @@ registro                BSTRING
       DISPLAY()                                                       ! e apresenta a janela
     END
     LOOP col = 1 TO SELF.ResultSetColCount                            ! Estando em uma linha, percorre todas as colunas
-      IF col > 1                                                      ! J· lemos ao menos uma coluna?
+      IF col > 1                                                      ! J√° lemos ao menos uma coluna?
         strClipboard = CLIP( strClipboard ) & '<9>'                   ! Vamos colocar o separador de colunas
       END
-      strClipboard = CLIP( strClipboard ) & SELF.GetCell( row, col )  ! Compıe a linha
+      strClipboard = CLIP( strClipboard ) & SELF.GetCell( row, col )  ! Comp√µe a linha
     END
     strClipboard = CLIP( strClipboard ) & '<13,10>'
   END
@@ -1089,7 +1122,7 @@ tagSQL_GUID             LIKE( TtagSQL_GUID )
   CODE
 
   CASE pType
-  OF SQL_CHAR OROF SQL_VARCHAR OROF SQL_LONGVARCHAR         ! AtenÁ„o, porque a vari·vel pode variar no comprimento
+  OF SQL_CHAR OROF SQL_VARCHAR OROF SQL_LONGVARCHAR         ! Aten√ß√£o, porque a vari√°vel pode variar no comprimento
     PeekBuffer &= NEW STRING( pLength )
     PEEK( pAddress, PeekBuffer )
     ReturnValue = PeekBuffer
